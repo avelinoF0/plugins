@@ -1,19 +1,27 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 ### For monitoring the performance metrics of your Elasticsearch cluster using Site24x7 Server Monitoring Plugins.
 
 ### 1. Have the site24x7 server monitoring agent up and running.
 ### 2. Download the plugin from github https://raw.githubusercontent.com/site24x7/plugins/master/elasticsearch/
 ### 3. Create a folder in name of the plugin under agent plugins directory (/opt/site24x7/monagent/plugins/)
-### 4. Place the plugin inside the folder 
+### 4. Place the plugin inside the folder
 
 ### Author: Tarun, Zoho Corp
 ### Language : Python
 ### Tested in Ubuntu
 
 
-import json, os,sys
 import time
+import json,os,sys
+import base64
+
+PYTHON_MAJOR_VERSION = sys.version_info[0]
+if PYTHON_MAJOR_VERSION == 3:
+    import urllib.request as urllib2
+elif PYTHON_MAJOR_VERSION == 2:
+    import urllib2
+
 
 '''
 This is Default configuration. 
@@ -48,7 +56,7 @@ PYTHON_MAJOR_VERSION = sys.version_info[0]
 if PYTHON_MAJOR_VERSION == 3:
     import urllib.request as urlconnection
     from urllib.request import HTTPError,URLError
-    from http.client import InvalidURL 
+    from http.client import InvalidURL
 elif PYTHON_MAJOR_VERSION == 2:
     import urllib2 as urlconnection
     from urllib2 import HTTPError,URLError
@@ -56,14 +64,14 @@ elif PYTHON_MAJOR_VERSION == 2:
 
 class escluster():
     def __init__(self,host_name,port,username,password):
-        self._url = 'http://'+host_name+':'+port
+        self._url = 'https://'+host_name+':'+port
         self._userName = username
         self._userPass = password
         self._realm = None
         self.dictEsPluginData = {}
         self.dictCounterValues = {}
         self.loadCounterValues()
-        
+
     def loadCounterValues(self):
         file_obj = None
         if not os.path.exists(counterFilePath):
@@ -75,13 +83,13 @@ class escluster():
             if str_counterValues:
                 self.dictCounterValues = json.loads(str_counterValues)
             file_obj.close()
-            
+
     def updateCounterValues(self,dict_valuesToUpdate):
         if os.path.exists(counterFilePath):
             file_obj = open(counterFilePath,'w')
             file_obj.write(json.dumps(dict_valuesToUpdate))
             file_obj.close()
-    
+
     def metricCollector(self):
         str_nodesData = self._openURL2('/_nodes/stats')
         if str_nodesData:
@@ -89,22 +97,29 @@ class escluster():
         str_clusterData = self._openURL2('/_cluster/health')
         if str_clusterData:
             self.parseClusterData(str_clusterData)
-        self.dictEsPluginData['units'] = METRICS_UNITS        
-        
+        self.dictEsPluginData['units'] = METRICS_UNITS
+
         return self.dictEsPluginData
-    
+
     def _openURL2(self,str_URLsuffix):
         str_responseData = None
         url = None
         try:
             url = self._url + str_URLsuffix
-            password_mgr = urlconnection.HTTPPasswordMgr()
-            password_mgr.add_password(None, url, self._userName, self._userPass)
-            auth_handler = urlconnection.HTTPBasicAuthHandler(password_mgr)
-            proxy = urlconnection.ProxyHandler({}) # Uses NO Proxy
-            opener = urlconnection.build_opener(proxy, auth_handler)
-            urlconnection.install_opener(opener)
-            response = urlconnection.urlopen(url, timeout = 5)
+            ### Create Proxy Handler for the HTTP Request
+            proxy = urllib2.ProxyHandler({}) # Uses NO Proxy
+
+            ### Create a HTTP Request with the authentication and proxy handlers
+            opener = urllib2.build_opener(proxy)
+            urllib2.install_opener(opener)
+
+            ### Get HTTP Response. Working 100% with Elastic Cloud
+            request = urllib2.Request(url)
+            base64string = base64.b64encode(('%s:%s' % (self._userName,self._userPass)).encode("utf-8"))
+            base64string = (base64string.decode('utf-8'))
+            request.add_header("Authorization", "Basic %s" % base64string)
+            response = urllib2.urlopen(request,timeout=TIMEOUT)
+
             if response.getcode() == 200:
                 byte_responseData = response.read()
                 str_responseData = byte_responseData.decode('UTF-8')
@@ -125,7 +140,7 @@ class escluster():
             self.dictEsPluginData['msg'] = 'Exception while opening stats url in python 2 : ' + str(e)
         finally:
             return str_responseData
-    
+
     def parseNodesData(self, str_nodesData):
         dictNodesData = json.loads(str_nodesData)
         num_disk_reads = 0
@@ -134,7 +149,7 @@ class escluster():
         jvm_gc_old_coll_time = 0
         query_time = 0
         query_total = 0
-        fetch_time = 0 
+        fetch_time = 0
         mem_used_perc_list = []
         if 'nodes' in dictNodesData:
             dictNodes = dictNodesData['nodes']
@@ -152,13 +167,13 @@ class escluster():
                 if (('old' in dictNodes[each_node]['jvm']['mem']['pools']) and (('used_in_bytes' and 'max_in_bytes') in dictNodes[each_node]['jvm']['mem']['pools']['old'])):
                     try:
                         mem_perc = round((float(dictNodes[each_node]['jvm']['mem']['pools']['old']['used_in_bytes'])/float(dictNodes[each_node]['jvm']['mem']['pools']['old']['max_in_bytes'])),2)*100
-                        mem_used_perc_list.append(mem_perc) 
+                        mem_used_perc_list.append(mem_perc)
                     except Exception as e:
                         pass
                 if (('old' in dictNodes[each_node]['jvm']['gc']['collectors']) and (('collection_count' and 'collection_time_in_millis') in dictNodes[each_node]['jvm']['gc']['collectors']['old'])):
                     try:
                         jvm_gc_old_coll_count += int(dictNodes[each_node]['jvm']['gc']['collectors']['old']['collection_count'])
-                        jvm_gc_old_coll_time += int(dictNodes[each_node]['jvm']['gc']['collectors']['old']['collection_time_in_millis']) 
+                        jvm_gc_old_coll_time += int(dictNodes[each_node]['jvm']['gc']['collectors']['old']['collection_time_in_millis'])
                     except Exception as e:
                         pass
                 if ('query_time_in_millis' and 'query_total' and 'fetch_time_in_millis') in dictNodes[each_node]['indices']['search']:
@@ -222,7 +237,7 @@ class escluster():
             self.dictEsPluginData['init_shards'] = dictClusterData['initializing_shards']
         if 'unassigned_shards' in dictClusterData:
             self.dictEsPluginData['unassigned_shards'] = dictClusterData['unassigned_shards']
-    
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
@@ -230,20 +245,20 @@ if __name__ == '__main__':
     parser.add_argument('--port', help='port number', type=int,  nargs='?', default=PORT)
     parser.add_argument('--username', help='user name of the elasticsearch', nargs='?', default=USERNAME)
     parser.add_argument('--password', help='password of the elasticsearch', nargs='?', default=PASSWORD)
-    
+
     parser.add_argument('--plugin_version', help='plugin template version', type=int,  nargs='?', default=PLUGIN_VERSION)
     parser.add_argument('--heartbeat', help='alert if monitor does not send data', type=bool, nargs='?', default=HEARTBEAT)
     args = parser.parse_args()
-    
+
     host_name=args.host
     port=str(args.port)
     username=args.username
     password=args.password
-    
-    
+
+
     esc = escluster(host_name,port,username,password)
     result = esc.metricCollector()
     result['plugin_version'] = args.plugin_version
     result['heartbeat_required'] = args.heartbeat
-    
+
     print(json.dumps(result, indent=4, sort_keys=True))
