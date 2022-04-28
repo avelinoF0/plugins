@@ -30,10 +30,10 @@ in the configuration file elasticsearch.cfg.
 
 Configuration File will have more Priority
 '''
-HOST='localhost'
-PORT='9200'
-USERNAME = None   #Add the username if any authentication is set for ES stats api
-PASSWORD = None   #Add the password if any authentication is set for ES stats api
+HOST='localhost' # Set your endpoint
+PORT='9243' # HTTPS Port
+USERNAME = None   #Add your username 
+PASSWORD = None   #Add your password
 TIMEOUT = 5
 
 #if any impacting changes to this plugin kindly increment the plugin version here.
