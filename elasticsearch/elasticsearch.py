@@ -34,7 +34,7 @@ HOST='localhost'
 PORT='9200'
 USERNAME = None   #Add the username if any authentication is set for ES stats api
 PASSWORD = None   #Add the password if any authentication is set for ES stats api
-
+TIMEOUT = 5
 
 #if any impacting changes to this plugin kindly increment the plugin version here.
 PLUGIN_VERSION = "1"
